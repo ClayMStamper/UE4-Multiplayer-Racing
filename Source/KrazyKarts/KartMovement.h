@@ -19,11 +19,9 @@ protected:
 	UPROPERTY(EditAnywhere, Category="Movement")
 	float AccelerationRate = 50.f;
 	UPROPERTY(EditAnywhere, Category="Movement")
-	float RotationalAccelerationRate = 0.5f;
-	UPROPERTY(EditAnywhere, Category="Movement")
 	float MaxSpeed = 1300.f;
 	UPROPERTY(EditAnywhere, Category="Movement")
-	float MaxAngularSpeed = 90.f; // rotation in degrees per second
+	float TurnRadius = 2.f; // rotation in radians
 	UPROPERTY(EditAnywhere, Category="Movement")
 	float DragCoefficient = 1.f;
 	UPROPERTY(EditAnywhere, meta=(UIMin="0.001", UIMax="0.0015"), Category="Movement")

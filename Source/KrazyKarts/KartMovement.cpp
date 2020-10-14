@@ -74,12 +74,9 @@ void UKartMovement::Move()
 
 void UKartMovement::Rotate(const float &DeltaTime)
 {
-	// calc angle of rotation
-	float AngleOfRotation = MaxAngularSpeed * DeltaTime * MagTorque;
-	AngleOfRotation = FMath::DegreesToRadians(AngleOfRotation);
-
 	// construct quat
-	const FQuat DeltaRot = FQuat(Kart->GetActorUpVector(), AngleOfRotation);
+	const float AngleOfRotation = Velocity.Size() / TurnRadius * MagTorque;
+	const FQuat DeltaRot = FQuat(Kart->GetActorUpVector(), AngleOfRotation * DeltaTime);
 
 	// rotate kart actor
 	Kart->AddActorWorldRotation(DeltaRot);
