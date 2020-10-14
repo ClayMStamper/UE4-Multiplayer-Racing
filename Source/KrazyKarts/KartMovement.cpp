@@ -46,9 +46,15 @@ void UKartMovement::TickComponent(float DeltaTime, ELevelTick TickType, FActorCo
 
 void UKartMovement::Accelerate(const float &DeltaTime)
 {
-	// decelerate naturally
-	const FVector Resistance = -Velocity.GetSafeNormal() * Velocity.SizeSquared() * Drag; 
-	Acceleration += Resistance * DeltaTime;
+	const FVector VelocityNormal = Velocity.GetSafeNormal();
+	
+	// Apply wind resistance
+	const FVector AirResistance = -VelocityNormal * Velocity.SizeSquared() * DragCoefficient; 
+	Acceleration += AirResistance * DeltaTime;
+
+	// Apply rolling/friction resistance
+	const FVector RollingResistance = -VelocityNormal * -GetWorld()->GetGravityZ() * Kart->GetMass() * RollingFrictionCoefficient;
+	Acceleration += RollingResistance * DeltaTime;
 
 	// accelerate from input
 	Velocity += Acceleration * DeltaTime;
@@ -93,6 +99,7 @@ void UKartMovement::RotateVertical(float AxisInput)
 	MagTorque = AxisInput;
 }
 
+// for use in blueprint speedometer
 float UKartMovement::GetSpeed()
 {
 	return Velocity.Size();

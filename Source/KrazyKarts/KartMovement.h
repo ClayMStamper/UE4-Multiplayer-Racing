@@ -5,7 +5,6 @@
 #include "CoreMinimal.h"
 #include "KartMovement.generated.h"
 
-
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
 class KRAZYKARTS_API UKartMovement : public UInputComponent
 {
@@ -26,7 +25,9 @@ protected:
 	UPROPERTY(EditAnywhere, Category="Movement")
 	float MaxAngularSpeed = 90.f; // rotation in degrees per second
 	UPROPERTY(EditAnywhere, Category="Movement")
-	float Drag = 0.03f;
+	float DragCoefficient = 1.f;
+	UPROPERTY(EditAnywhere, meta=(UIMin="0.001", UIMax="0.0015"), Category="Movement")
+	float RollingFrictionCoefficient = 0.001f;
 	
 	UPROPERTY(Transient)
 	FVector Velocity;

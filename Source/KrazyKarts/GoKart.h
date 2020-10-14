@@ -15,9 +15,12 @@ class KRAZYKARTS_API AGoKart : public APawn
 public:
 	// Sets default values for this pawn's properties
 	AGoKart();
+	virtual void Tick(float DeltaTime) override;
 
 	float GetMass();
-
+	UFUNCTION(BlueprintCallable)
+    class UKartMovement* GetKartMovementComponent() const;
+	
 protected:
 	
 	// Called when the game starts or when spawned
@@ -29,11 +32,5 @@ protected:
 	UPROPERTY(EditAnywhere)
 	float Mass = 1000.f;
 
-	UFUNCTION(BlueprintCallable)
-	UKartMovement* GetKartMovementComponent() const;
-	
-public:	
-	// Called every frame
-	virtual void Tick(float DeltaTime) override;
 
 };
