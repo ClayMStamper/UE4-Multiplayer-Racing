@@ -12,8 +12,11 @@ class KRAZYKARTS_API UKartMovement : public UInputComponent
 
 public:	
 	// Sets default values for this component's properties
-	UKartMovement();
-
+	UKartMovement(const class FObjectInitializer& ObjectInitializer);
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+	UPlayerInput* PlayerInputComponent;
+	void Client_AccelerateForward(float AxisInput);
+	void Client_RotateYaw(float AxisInput);
 protected:
 	
 	UPROPERTY(EditAnywhere, Category="Movement")
@@ -21,7 +24,7 @@ protected:
 	UPROPERTY(EditAnywhere, Category="Movement")
 	float MaxSpeed = 1300.f;
 	UPROPERTY(EditAnywhere, Category="Movement")
-	float TurnRadius = 2.f; // rotation in radians
+	float TurnRadius = 20.f; 
 	UPROPERTY(EditAnywhere, Category="Movement")
 	float DragCoefficient = 1.f;
 	UPROPERTY(EditAnywhere, meta=(UIMin="0.001", UIMax="0.0015"), Category="Movement")
@@ -33,6 +36,8 @@ protected:
 	FVector Acceleration;
 	UPROPERTY(Transient)
 	float MagTorque;
+	UPROPERTY(Replicated)
+	FVector ReplicatedLocation;
 	
 	UPROPERTY(Transient)
 	class AGoKart* Kart;
@@ -42,14 +47,17 @@ protected:
 	void Accelerate(const float &DeltaTime);
 	void Move();
 
-	void AccelerateForward(float AxisInput);
-	void RotateVertical(float AxisInput);
+	UFUNCTION(Server, Reliable, WithValidation)
+	void Server_AccelerateForward(float AxisInput);
+	UFUNCTION(Server, Reliable, WithValidation)
+	void Server_RotateYaw(float AxisInput); // rotate along vertical axis
+	virtual void GetLifetimeReplicatedProps (TArray < FLifetimeProperty > & OutLifetimeProps) const override;
 	
 	UFUNCTION(BlueprintCallable)
 	float GetSpeed();
 
-public:	
-	// Called every frame
-	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
-	UPlayerInput* PlayerInputComponent;
+private:
+
+	FString RoleEnumToText(ENetRole Role);
+	
 };

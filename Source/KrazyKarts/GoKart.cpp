@@ -9,9 +9,17 @@ AGoKart::AGoKart()
 {
  	// Set this pawn to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
+	bReplicates = true;
 	
-	KartMovement = FindComponentByClass<UKartMovement>();
+	KartMovement = CreateDefaultSubobject<UKartMovement>(TEXT("KartMovement"));
 	
+	if (KartMovement)
+	{
+		KartMovement->SetIsReplicated(true);
+		InputComponent = KartMovement;
+		UE_LOG(LogTemp, Warning, TEXT("Kart movement set to replicate!"));
+	} 
+
 }
 
 float AGoKart::GetMass()
