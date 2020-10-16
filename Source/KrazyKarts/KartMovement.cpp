@@ -41,25 +41,7 @@ void UKartMovement::TickComponent(float DeltaTime, ELevelTick TickType, FActorCo
 	Move();
 	Rotate(DeltaTime);
 
-	DrawDebugString
-	(
-		GetWorld(),
-		Kart->GetActorLocation() + Kart->GetActorUpVector() * 50,
-		FString::Printf(TEXT("MPH: %f"), Velocity.Size()),
-		0,
-		FColor::Red,
-		.0001f
-	);
-
-	DrawDebugString
-    (
-        GetWorld(),
-        Kart->GetActorLocation() + Kart->GetActorUpVector() * 100,
-        FString::Printf(TEXT("Role: ")) + RoleEnumToText(GetOwnerRole()),
-        0,
-        FColor::Red,
-        .0001f
-    );
+	DrawDebugScreenMessages();
 	
 }
 
@@ -80,8 +62,23 @@ void UKartMovement::Accelerate(const float &DeltaTime)
 	
 }
 
+void UKartMovement::Rotate(const float &DeltaTime)
+{
+	// construct quat
+	const float ForwardSpeed = FVector::DotProduct(Kart->GetActorForwardVector(), Velocity);
+	const float AngleOfRotation = ForwardSpeed / TurnRadius * MagTorque;
+	const FQuat DeltaRot = FQuat(Kart->GetActorUpVector(), AngleOfRotation * DeltaTime);
+
+	// rotate kart actor
+	Kart->AddActorWorldRotation(DeltaRot);
+
+	// rotate velocity
+	Velocity = DeltaRot.RotateVector(Velocity);
+}
+
 void UKartMovement::Move()
 {
+	if (!Kart) return;
 	// move
 	FHitResult Hit;
 	Kart->AddActorWorldOffset(Velocity, true, &Hit);
@@ -91,16 +88,19 @@ void UKartMovement::Move()
 	}
 
 	if (Kart->GetLocalRole() == ROLE_AutonomousProxy)
-		MSG(FString::Printf(TEXT("Replicated Location: %s"), *ReplicatedLocation.ToString()));
+		MSG(FString::Printf(TEXT("Replicated Location: %s"), *ReplicatedTransform.ToString()));
 	
 	// correct position to server replicated pos
 	if (Kart->HasAuthority())
 	{
-		ReplicatedLocation = Kart->GetActorLocation();
-	} else
-	{
-		Kart->SetActorLocation(ReplicatedLocation);
-	}
+		ReplicatedTransform = Kart->GetTransform();
+	} 
+}
+
+void UKartMovement::OnRep_Transform() const
+{
+	if (!Kart) return;
+	Kart->SetActorTransform(ReplicatedTransform);
 }
 
 void UKartMovement::Client_AccelerateForward(float AxisInput)
@@ -132,20 +132,6 @@ bool UKartMovement::Server_AccelerateForward_Validate(float AxisInput)
 	return FMath::Abs(AxisInput) <= 1;
 }
 
-void UKartMovement::Rotate(const float &DeltaTime)
-{
-	// construct quat
-	const float ForwardSpeed = FVector::DotProduct(Kart->GetActorForwardVector(), Velocity);
-	const float AngleOfRotation = ForwardSpeed / TurnRadius * MagTorque;
-	const FQuat DeltaRot = FQuat(Kart->GetActorUpVector(), AngleOfRotation * DeltaTime);
-
-	// rotate kart actor
-	Kart->AddActorWorldRotation(DeltaRot);
-
-	// rotate velocity
-	Velocity = DeltaRot.RotateVector(Velocity);
-}
-
 
 void UKartMovement::Server_RotateYaw_Implementation(float AxisInput)
 {
@@ -161,7 +147,7 @@ void UKartMovement::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLif
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(UKartMovement, bReplicatedFlag);
-	DOREPLIFETIME(UKartMovement, ReplicatedLocation);
+	DOREPLIFETIME(UKartMovement, ReplicatedTransform);
 	
 }
 
@@ -186,6 +172,29 @@ FString UKartMovement::RoleEnumToText(ENetRole Role)
 		default:
 			return "ENetRole not found";
 	}
+}
+
+void UKartMovement::DrawDebugScreenMessages() 
+{
+	DrawDebugString
+    (
+        GetWorld(),
+        Kart->GetActorLocation() + Kart->GetActorUpVector() * 50,
+        FString::Printf(TEXT("MPH: %f"), Velocity.Size()),
+        0,
+        FColor::Red,
+        .0001f
+    );
+
+	DrawDebugString
+    (
+        GetWorld(),
+        Kart->GetActorLocation() + Kart->GetActorUpVector() * 100,
+        FString::Printf(TEXT("Role: ")) + RoleEnumToText(GetOwnerRole()),
+        0,
+        FColor::Red,
+        .0001f
+    );
 }
 
 

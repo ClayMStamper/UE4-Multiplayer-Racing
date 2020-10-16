@@ -40,8 +40,8 @@ protected:
 	FVector Acceleration;
 	UPROPERTY(Transient)
 	float MagTorque;
-	UPROPERTY(Replicated)
-	FVector ReplicatedLocation;
+	UPROPERTY(ReplicatedUsing=OnRep_Transform)
+	FTransform ReplicatedTransform;
 	
 	UPROPERTY(Transient)
 	class AGoKart* Kart;
@@ -51,6 +51,8 @@ protected:
 	void Accelerate(const float &DeltaTime);
 	void Move();
 
+	UFUNCTION()
+	void OnRep_Transform() const;
 	UFUNCTION(Server, Reliable, WithValidation)
 	void Server_AccelerateForward(float AxisInput);
 	UFUNCTION(Server, Reliable, WithValidation)
@@ -63,5 +65,7 @@ protected:
 private:
 
 	FString RoleEnumToText(ENetRole Role);
+
+	void DrawDebugScreenMessages();
 	
 };
