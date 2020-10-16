@@ -10,12 +10,11 @@
 #define MSG(msg) GEngine->AddOnScreenDebugMessage(0, 5, FColor::Green, msg);
 
 UKartMovement::UKartMovement(const FObjectInitializer& ObjectInitializer)
-	: Super(ObjectInitializer)
+	: Super(ObjectInitializer), bReplicatedFlag(1), PlayerInputComponent(nullptr), MagTorque(0), Kart(nullptr)
 {
 	// Set this component to be initialized when the game starts, and to be ticked every frame.  You can turn these features
 	// off to improve performance if you don't need them.
 	PrimaryComponentTick.bCanEverTick = true;
-	
 }
 
 
@@ -91,6 +90,9 @@ void UKartMovement::Move()
 		Velocity = FVector::ZeroVector;
 	}
 
+	if (Kart->GetLocalRole() == ROLE_AutonomousProxy)
+		MSG(FString::Printf(TEXT("Replicated Location: %s"), *ReplicatedLocation.ToString()));
+	
 	// correct position to server replicated pos
 	if (Kart->HasAuthority())
 	{
@@ -158,7 +160,9 @@ bool UKartMovement::Server_RotateYaw_Validate(float AxisInput)
 void UKartMovement::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-	DOREPLIFETIME( AActor, GetOwner());
+	DOREPLIFETIME(UKartMovement, bReplicatedFlag);
+	DOREPLIFETIME(UKartMovement, ReplicatedLocation);
+	
 }
 
 // for use in blueprint speedometer

@@ -8,11 +8,15 @@
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
 class KRAZYKARTS_API UKartMovement : public UInputComponent
 {
-	GENERATED_BODY()
+	GENERATED_UCLASS_BODY()
 
-public:	
+public:
+	// Component Replication props
+	UPROPERTY(Replicated)
+	uint32 bReplicatedFlag:1;
+	virtual bool IsSupportedForNetworking() const override { return true; }
+	
 	// Sets default values for this component's properties
-	UKartMovement(const class FObjectInitializer& ObjectInitializer);
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 	UPlayerInput* PlayerInputComponent;
 	void Client_AccelerateForward(float AxisInput);
