@@ -5,6 +5,13 @@
 #include "CoreMinimal.h"
 #include "KartMovement.generated.h"
 
+USTRUCT()
+struct FKartMove
+{
+	GENERATED_BODY()
+	
+};
+
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
 class KRAZYKARTS_API UKartMovement : public UInputComponent
 {
@@ -16,7 +23,7 @@ public:
 	uint32 bReplicatedFlag:1;
 	virtual bool IsSupportedForNetworking() const override { return true; }
 	
-	// Sets default values for this component's properties
+	// Create a move and send to the server
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 	UPlayerInput* PlayerInputComponent;
 	void Client_AccelerateForward(float AxisInput);
@@ -34,22 +41,22 @@ protected:
 	UPROPERTY(EditAnywhere, meta=(UIMin="0.001", UIMax="0.0015"), Category="Movement")
 	float RollingFrictionCoefficient = 0.001f;
 	
-	UPROPERTY(Transient)
-	FVector Velocity;
-	UPROPERTY(Transient)
+	UPROPERTY(Replicated, Transient)
 	FVector Acceleration;
-	UPROPERTY(Transient)
+	UPROPERTY(Replicated, Transient)
 	float MagTorque;
-	UPROPERTY(ReplicatedUsing=OnRep_Transform)
+	UPROPERTY(ReplicatedUsing=OnRep_Transform, Transient)
 	FTransform ReplicatedTransform;
-	
+	UPROPERTY(Replicated, Transient)
+	FVector ReplicatedVelocity;
+
 	UPROPERTY(Transient)
 	class AGoKart* Kart;
 
 	virtual void BeginPlay() override;
 	void Rotate(const float &DeltaTime);
-	void Accelerate(const float &DeltaTime);
-	void Move();
+	void UpdateAcceleration(const float &DeltaTime);
+	void UpdateTransform();
 
 	UFUNCTION()
 	void OnRep_Transform() const;
@@ -58,6 +65,11 @@ protected:
 	UFUNCTION(Server, Reliable, WithValidation)
 	void Server_RotateYaw(float AxisInput); // rotate along vertical axis
 	virtual void GetLifetimeReplicatedProps (TArray < FLifetimeProperty > & OutLifetimeProps) const override;
+
+	UFUNCTION(Server, Reliable, WithValidation)
+	void Server_OnRecieveMove();
+	UFUNCTION(Client, Reliable, WithValidation)
+	void Client_OnRecieveMoveState();
 	
 	UFUNCTION(BlueprintCallable)
 	float GetSpeed();

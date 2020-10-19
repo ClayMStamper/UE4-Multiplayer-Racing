@@ -27,7 +27,7 @@ void UKartMovement::BeginPlay()
 	Kart = Cast<AGoKart>(GetOwner());
 	check(Kart);
 
-	Velocity = FVector::ZeroVector;
+	ReplicatedVelocity = FVector::ZeroVector;
 	Acceleration = FVector::ZeroVector;
 	
 }
@@ -37,20 +37,28 @@ void UKartMovement::TickComponent(float DeltaTime, ELevelTick TickType, FActorCo
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	Accelerate(DeltaTime);
-	Move();
+	// Create a new move
+
+	// Save list of un-acked moves
+
+	// Send the move to the server
+
+	//Simulate move locally
+	
+	UpdateAcceleration(DeltaTime);
+	UpdateTransform();
 	Rotate(DeltaTime);
 
 	DrawDebugScreenMessages();
 	
 }
 
-void UKartMovement::Accelerate(const float &DeltaTime)
+void UKartMovement::UpdateAcceleration(const float &DeltaTime)
 {
-	const FVector VelocityNormal = Velocity.GetSafeNormal();
+	const FVector VelocityNormal = ReplicatedVelocity.GetSafeNormal();
 	
 	// Apply wind resistance
-	const FVector AirResistance = -VelocityNormal * Velocity.SizeSquared() * DragCoefficient; 
+	const FVector AirResistance = -VelocityNormal * ReplicatedVelocity.SizeSquared() * DragCoefficient; 
 	Acceleration += AirResistance * DeltaTime;
 
 	// Apply rolling/friction resistance
@@ -58,14 +66,14 @@ void UKartMovement::Accelerate(const float &DeltaTime)
 	Acceleration += RollingResistance * DeltaTime;
 
 	// accelerate from input
-	Velocity += Acceleration * DeltaTime;
+	ReplicatedVelocity += Acceleration * DeltaTime;
 	
 }
 
 void UKartMovement::Rotate(const float &DeltaTime)
 {
 	// construct quat
-	const float ForwardSpeed = FVector::DotProduct(Kart->GetActorForwardVector(), Velocity);
+	const float ForwardSpeed = FVector::DotProduct(Kart->GetActorForwardVector(), ReplicatedVelocity);
 	const float AngleOfRotation = ForwardSpeed / TurnRadius * MagTorque;
 	const FQuat DeltaRot = FQuat(Kart->GetActorUpVector(), AngleOfRotation * DeltaTime);
 
@@ -73,18 +81,20 @@ void UKartMovement::Rotate(const float &DeltaTime)
 	Kart->AddActorWorldRotation(DeltaRot);
 
 	// rotate velocity
-	Velocity = DeltaRot.RotateVector(Velocity);
+	ReplicatedVelocity = DeltaRot.RotateVector(ReplicatedVelocity);
 }
 
-void UKartMovement::Move()
+void UKartMovement::UpdateTransform()
 {
-	if (!Kart) return;
+	if (!Kart)
+		return;
+	
 	// move
 	FHitResult Hit;
-	Kart->AddActorWorldOffset(Velocity, true, &Hit);
+	Kart->AddActorWorldOffset(ReplicatedVelocity, true, &Hit);
 	if (Hit.IsValidBlockingHit())
 	{
-		Velocity = FVector::ZeroVector;
+		ReplicatedVelocity = FVector::ZeroVector;
 	}
 
 	if (Kart->GetLocalRole() == ROLE_AutonomousProxy)
@@ -93,14 +103,19 @@ void UKartMovement::Move()
 	// correct position to server replicated pos
 	if (Kart->HasAuthority())
 	{
-		ReplicatedTransform = Kart->GetTransform();
+		ReplicatedTransform = Kart->GetActorTransform();
 	} 
 }
 
 void UKartMovement::OnRep_Transform() const
 {
-	if (!Kart) return;
+	if (!Kart)
+		return;
+
+	// FTransform temp = Kart->GetTransform(); 
+	// Kart->SetActorTransform(FMath::Lerp(temp, ReplicatedTransform, GetWorld()->TimeSeconds));
 	Kart->SetActorTransform(ReplicatedTransform);
+
 }
 
 void UKartMovement::Client_AccelerateForward(float AxisInput)
@@ -151,10 +166,33 @@ void UKartMovement::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLif
 	
 }
 
+void UKartMovement::Server_OnRecieveMove_Implementation()
+{
+	// check valid
+
+	// simulate move
+
+	// send canonical state
+}
+
+bool UKartMovement::Server_OnRecieveMove_Validate()
+{
+	return true;
+}
+
+void UKartMovement::Client_OnRecieveMoveState_Implementation()
+{
+}
+
+bool UKartMovement::Client_OnRecieveMoveState_Validate()
+{
+	return true;
+}
+
 // for use in blueprint speedometer
 float UKartMovement::GetSpeed()
 {
-	return Velocity.Size();
+	return ReplicatedVelocity.Size();
 }
 
 FString UKartMovement::RoleEnumToText(ENetRole Role)
@@ -180,7 +218,7 @@ void UKartMovement::DrawDebugScreenMessages()
     (
         GetWorld(),
         Kart->GetActorLocation() + Kart->GetActorUpVector() * 50,
-        FString::Printf(TEXT("MPH: %f"), Velocity.Size()),
+        FString::Printf(TEXT("MPH: %f"), ReplicatedVelocity.Size()),
         0,
         FColor::Red,
         .0001f
