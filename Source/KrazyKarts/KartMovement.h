@@ -6,10 +6,31 @@
 #include "KartMovement.generated.h"
 
 USTRUCT()
-struct FKartMove
+struct FKartMoveInput
 {
-	GENERATED_BODY()
+	GENERATED_USTRUCT_BODY()
 	
+	UPROPERTY()
+	FVector Acceleration;
+	UPROPERTY()
+	float MagTorque;
+	UPROPERTY()
+	float DeltaTime;
+	UPROPERTY()
+	float TimeStamp;
+};
+
+USTRUCT()
+struct FKartMoveState
+{
+	GENERATED_USTRUCT_BODY()
+
+	UPROPERTY()
+	FTransform Transform;
+	UPROPERTY()
+	FVector Velocity;
+	UPROPERTY()
+	FKartMoveInput LastMove;
 };
 
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
@@ -40,26 +61,27 @@ protected:
 	float DragCoefficient = 1.f;
 	UPROPERTY(EditAnywhere, meta=(UIMin="0.001", UIMax="0.0015"), Category="Movement")
 	float RollingFrictionCoefficient = 0.001f;
-	
-	UPROPERTY(Replicated, Transient)
-	FVector Acceleration;
-	UPROPERTY(Replicated, Transient)
-	float MagTorque;
-	UPROPERTY(ReplicatedUsing=OnRep_Transform, Transient)
-	FTransform ReplicatedTransform;
-	UPROPERTY(Replicated, Transient)
-	FVector ReplicatedVelocity;
 
+	UPROPERTY(ReplicatedUsing=OnRep_ServerMoveState, Transient)
+	FKartMoveState Server_MoveState;
+	
+	UPROPERTY()
+	FVector Velocity;
+	UPROPERTY()
+	FVector Acceleration;
+	UPROPERTY()
+	float MagTorque;
+	
 	UPROPERTY(Transient)
 	class AGoKart* Kart;
 
 	virtual void BeginPlay() override;
 	void Rotate(const float &DeltaTime);
-	void UpdateAcceleration(const float &DeltaTime);
+	void Accelerate(const float &DeltaTime);
 	void UpdateTransform();
 
 	UFUNCTION()
-	void OnRep_Transform() const;
+	void OnRep_ServerMoveState();
 	UFUNCTION(Server, Reliable, WithValidation)
 	void Server_AccelerateForward(float AxisInput);
 	UFUNCTION(Server, Reliable, WithValidation)

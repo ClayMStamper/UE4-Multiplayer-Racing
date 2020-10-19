@@ -27,7 +27,7 @@ void UKartMovement::BeginPlay()
 	Kart = Cast<AGoKart>(GetOwner());
 	check(Kart);
 
-	ReplicatedVelocity = FVector::ZeroVector;
+	Velocity = FVector::ZeroVector;
 	Acceleration = FVector::ZeroVector;
 	
 }
@@ -45,7 +45,7 @@ void UKartMovement::TickComponent(float DeltaTime, ELevelTick TickType, FActorCo
 
 	//Simulate move locally
 	
-	UpdateAcceleration(DeltaTime);
+	Accelerate(DeltaTime);
 	UpdateTransform();
 	Rotate(DeltaTime);
 
@@ -53,12 +53,12 @@ void UKartMovement::TickComponent(float DeltaTime, ELevelTick TickType, FActorCo
 	
 }
 
-void UKartMovement::UpdateAcceleration(const float &DeltaTime)
+void UKartMovement::Accelerate(const float &DeltaTime)
 {
-	const FVector VelocityNormal = ReplicatedVelocity.GetSafeNormal();
+	const FVector VelocityNormal = Velocity.GetSafeNormal();
 	
 	// Apply wind resistance
-	const FVector AirResistance = -VelocityNormal * ReplicatedVelocity.SizeSquared() * DragCoefficient; 
+	const FVector AirResistance = -VelocityNormal * Velocity.SizeSquared() * DragCoefficient; 
 	Acceleration += AirResistance * DeltaTime;
 
 	// Apply rolling/friction resistance
@@ -66,14 +66,14 @@ void UKartMovement::UpdateAcceleration(const float &DeltaTime)
 	Acceleration += RollingResistance * DeltaTime;
 
 	// accelerate from input
-	ReplicatedVelocity += Acceleration * DeltaTime;
+	Velocity += Acceleration * DeltaTime;
 	
 }
 
 void UKartMovement::Rotate(const float &DeltaTime)
 {
 	// construct quat
-	const float ForwardSpeed = FVector::DotProduct(Kart->GetActorForwardVector(), ReplicatedVelocity);
+	const float ForwardSpeed = FVector::DotProduct(Kart->GetActorForwardVector(), Velocity);
 	const float AngleOfRotation = ForwardSpeed / TurnRadius * MagTorque;
 	const FQuat DeltaRot = FQuat(Kart->GetActorUpVector(), AngleOfRotation * DeltaTime);
 
@@ -81,7 +81,7 @@ void UKartMovement::Rotate(const float &DeltaTime)
 	Kart->AddActorWorldRotation(DeltaRot);
 
 	// rotate velocity
-	ReplicatedVelocity = DeltaRot.RotateVector(ReplicatedVelocity);
+	Velocity = DeltaRot.RotateVector(Velocity);
 }
 
 void UKartMovement::UpdateTransform()
@@ -91,31 +91,28 @@ void UKartMovement::UpdateTransform()
 	
 	// move
 	FHitResult Hit;
-	Kart->AddActorWorldOffset(ReplicatedVelocity, true, &Hit);
+	Kart->AddActorWorldOffset(Velocity, true, &Hit);
 	if (Hit.IsValidBlockingHit())
 	{
-		ReplicatedVelocity = FVector::ZeroVector;
+		Velocity = FVector::ZeroVector;
 	}
 
-	if (Kart->GetLocalRole() == ROLE_AutonomousProxy)
-		MSG(FString::Printf(TEXT("Replicated Location: %s"), *ReplicatedTransform.ToString()));
-	
 	// correct position to server replicated pos
 	if (Kart->HasAuthority())
 	{
-		ReplicatedTransform = Kart->GetActorTransform();
+		Server_MoveState.Transform = Kart->GetActorTransform();
+		Server_MoveState.Velocity = Velocity;
+		//TODO: update last move
 	} 
 }
 
-void UKartMovement::OnRep_Transform() const
+// when server updates move state, propagate to clients
+void UKartMovement::OnRep_ServerMoveState()
 {
 	if (!Kart)
 		return;
-
-	// FTransform temp = Kart->GetTransform(); 
-	// Kart->SetActorTransform(FMath::Lerp(temp, ReplicatedTransform, GetWorld()->TimeSeconds));
-	Kart->SetActorTransform(ReplicatedTransform);
-
+	Kart->SetActorTransform(Server_MoveState.Transform);
+	Velocity = Server_MoveState.Velocity;
 }
 
 void UKartMovement::Client_AccelerateForward(float AxisInput)
@@ -162,7 +159,7 @@ void UKartMovement::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLif
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(UKartMovement, bReplicatedFlag);
-	DOREPLIFETIME(UKartMovement, ReplicatedTransform);
+	DOREPLIFETIME(UKartMovement, Server_MoveState);
 	
 }
 
@@ -182,6 +179,11 @@ bool UKartMovement::Server_OnRecieveMove_Validate()
 
 void UKartMovement::Client_OnRecieveMoveState_Implementation()
 {
+	// remove all moves included in state
+
+	// reset to server state
+
+	// replace/simulate unacked moves
 }
 
 bool UKartMovement::Client_OnRecieveMoveState_Validate()
@@ -192,7 +194,7 @@ bool UKartMovement::Client_OnRecieveMoveState_Validate()
 // for use in blueprint speedometer
 float UKartMovement::GetSpeed()
 {
-	return ReplicatedVelocity.Size();
+	return Velocity.Size();
 }
 
 FString UKartMovement::RoleEnumToText(ENetRole Role)
@@ -218,7 +220,7 @@ void UKartMovement::DrawDebugScreenMessages()
     (
         GetWorld(),
         Kart->GetActorLocation() + Kart->GetActorUpVector() * 50,
-        FString::Printf(TEXT("MPH: %f"), ReplicatedVelocity.Size()),
+        FString::Printf(TEXT("MPH: %f"), Velocity.Size()),
         0,
         FColor::Red,
         .0001f
