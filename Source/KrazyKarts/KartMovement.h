@@ -11,9 +11,9 @@ struct FKartMoveInput
 	GENERATED_USTRUCT_BODY()
 	
 	UPROPERTY()
-	FVector Acceleration;
+	float Throttle;
 	UPROPERTY()
-	float MagTorque;
+	float Torque;
 	UPROPERTY()
 	float DeltaTime;
 	UPROPERTY()
@@ -30,6 +30,8 @@ struct FKartMoveState
 	UPROPERTY()
 	FVector Velocity;
 	UPROPERTY()
+	FVector Acceleration;
+	UPROPERTY()
 	FKartMoveInput LastMove;
 };
 
@@ -39,20 +41,24 @@ class KRAZYKARTS_API UKartMovement : public UInputComponent
 	GENERATED_UCLASS_BODY()
 
 public:
-	// Component Replication props
 	UPROPERTY(Replicated)
 	uint32 bReplicatedFlag:1;
 	virtual bool IsSupportedForNetworking() const override { return true; }
 	
-	// Create a move and send to the server
+	// Tick: Create a move and send to the server
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
-	UPlayerInput* PlayerInputComponent;
+
+	// Client Input Methods
 	void Client_AccelerateForward(float AxisInput);
 	void Client_RotateYaw(float AxisInput);
-protected:
 	
+protected:
+
+	virtual void GetLifetimeReplicatedProps (TArray < FLifetimeProperty > & OutLifetimeProps) const override;
+
+	// Client Constant Properties
 	UPROPERTY(EditAnywhere, Category="Movement")
-	float AccelerationRate = 50.f;
+	float AccelerationScalar = 50.f;
 	UPROPERTY(EditAnywhere, Category="Movement")
 	float MaxSpeed = 1300.f;
 	UPROPERTY(EditAnywhere, Category="Movement")
@@ -62,36 +68,37 @@ protected:
 	UPROPERTY(EditAnywhere, meta=(UIMin="0.001", UIMax="0.0015"), Category="Movement")
 	float RollingFrictionCoefficient = 0.001f;
 
-	UPROPERTY(ReplicatedUsing=OnRep_ServerMoveState, Transient)
-	FKartMoveState Server_MoveState;
+	// Client Object References
+	UPROPERTY(Transient)
+	class AGoKart* Kart;
 	
+	// Client Variables 
+	UPROPERTY()
+	float Throttle;
+	UPROPERTY()
+	float Torque;
 	UPROPERTY()
 	FVector Velocity;
 	UPROPERTY()
 	FVector Acceleration;
-	UPROPERTY()
-	float MagTorque;
-	
-	UPROPERTY(Transient)
-	class AGoKart* Kart;
 
+	// Client methods
 	virtual void BeginPlay() override;
 	void Rotate(const float &DeltaTime);
 	void Accelerate(const float &DeltaTime);
 	void UpdateTransform();
+	
+	// Server Replicated Properties
+	UPROPERTY(ReplicatedUsing=OnRep_ReplicatedMoveState, Transient)
+	FKartMoveState ReplicatedMoveState;
 
+	// Client Replication Methods
 	UFUNCTION()
-	void OnRep_ServerMoveState();
+    void OnRep_ReplicatedMoveState();
+	
+	// Server methods
 	UFUNCTION(Server, Reliable, WithValidation)
-	void Server_AccelerateForward(float AxisInput);
-	UFUNCTION(Server, Reliable, WithValidation)
-	void Server_RotateYaw(float AxisInput); // rotate along vertical axis
-	virtual void GetLifetimeReplicatedProps (TArray < FLifetimeProperty > & OutLifetimeProps) const override;
-
-	UFUNCTION(Server, Reliable, WithValidation)
-	void Server_OnRecieveMove();
-	UFUNCTION(Client, Reliable, WithValidation)
-	void Client_OnRecieveMoveState();
+    void Server_ReceiveMoveInput(const FKartMoveInput& MoveInput);
 	
 	UFUNCTION(BlueprintCallable)
 	float GetSpeed();
@@ -99,7 +106,6 @@ protected:
 private:
 
 	FString RoleEnumToText(ENetRole Role);
-
 	void DrawDebugScreenMessages();
 	
 };

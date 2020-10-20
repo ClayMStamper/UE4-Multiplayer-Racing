@@ -9,8 +9,9 @@
 
 #define MSG(msg) GEngine->AddOnScreenDebugMessage(0, 5, FColor::Green, msg);
 
+
 UKartMovement::UKartMovement(const FObjectInitializer& ObjectInitializer)
-	: Super(ObjectInitializer), bReplicatedFlag(1), PlayerInputComponent(nullptr), MagTorque(0), Kart(nullptr)
+	: Super(ObjectInitializer)
 {
 	// Set this component to be initialized when the game starts, and to be ticked every frame.  You can turn these features
 	// off to improve performance if you don't need them.
@@ -27,9 +28,18 @@ void UKartMovement::BeginPlay()
 	Kart = Cast<AGoKart>(GetOwner());
 	check(Kart);
 
-	Velocity = FVector::ZeroVector;
-	Acceleration = FVector::ZeroVector;
-	
+}
+
+// input method for acceleration
+void UKartMovement::Client_AccelerateForward(float AxisInput)
+{
+	Throttle = AxisInput;
+}
+
+// input method for rotation
+void UKartMovement::Client_RotateYaw(float AxisInput)
+{
+	Torque = AxisInput;
 }
 
 // Called every frame
@@ -37,14 +47,26 @@ void UKartMovement::TickComponent(float DeltaTime, ELevelTick TickType, FActorCo
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	// Create a new move
+	if (!Kart)
+		return;
+	
+	// Create a "MoveInput" on autonomous client
+	if (Kart->IsLocallyControlled())
+	{
+		FKartMoveInput MoveInput;
+		MoveInput.DeltaTime = DeltaTime;
+		MoveInput.Throttle = Throttle;
+		MoveInput.Torque = Torque;
+		//TODO: Set timestamp
 
-	// Save list of un-acked moves
+		// send move to server
+		Server_ReceiveMoveInput(MoveInput);
+	}
+	
+	//TODO: Save list of un-acked moves
 
-	// Send the move to the server
 
 	//Simulate move locally
-	
 	Accelerate(DeltaTime);
 	UpdateTransform();
 	Rotate(DeltaTime);
@@ -53,10 +75,28 @@ void UKartMovement::TickComponent(float DeltaTime, ELevelTick TickType, FActorCo
 	
 }
 
+void UKartMovement::Server_ReceiveMoveInput_Implementation(const FKartMoveInput& MoveInput)
+{
+	// Match this authoritative entity's move to autonomous proxy's input
+	Throttle = MoveInput.Throttle;
+	Torque = MoveInput.Torque;
+	
+	// send canonical state
+	
+}
+
+bool UKartMovement::Server_ReceiveMoveInput_Validate(const FKartMoveInput& MoveInput)
+{
+	return true;
+}
+
 void UKartMovement::Accelerate(const float &DeltaTime)
 {
 	const FVector VelocityNormal = Velocity.GetSafeNormal();
-	
+
+	// set acceleration from input
+	Acceleration = Kart->GetActorForwardVector() * Throttle * AccelerationScalar;
+
 	// Apply wind resistance
 	const FVector AirResistance = -VelocityNormal * Velocity.SizeSquared() * DragCoefficient; 
 	Acceleration += AirResistance * DeltaTime;
@@ -65,7 +105,7 @@ void UKartMovement::Accelerate(const float &DeltaTime)
 	const FVector RollingResistance = -VelocityNormal * -GetWorld()->GetGravityZ() * Kart->GetMass() * RollingFrictionCoefficient;
 	Acceleration += RollingResistance * DeltaTime;
 
-	// accelerate from input
+	// apply acceleration to velocity
 	Velocity += Acceleration * DeltaTime;
 	
 }
@@ -74,7 +114,7 @@ void UKartMovement::Rotate(const float &DeltaTime)
 {
 	// construct quat
 	const float ForwardSpeed = FVector::DotProduct(Kart->GetActorForwardVector(), Velocity);
-	const float AngleOfRotation = ForwardSpeed / TurnRadius * MagTorque;
+	const float AngleOfRotation = ForwardSpeed / TurnRadius * Torque;
 	const FQuat DeltaRot = FQuat(Kart->GetActorUpVector(), AngleOfRotation * DeltaTime);
 
 	// rotate kart actor
@@ -100,85 +140,21 @@ void UKartMovement::UpdateTransform()
 	// correct position to server replicated pos
 	if (Kart->HasAuthority())
 	{
-		Server_MoveState.Transform = Kart->GetActorTransform();
-		Server_MoveState.Velocity = Velocity;
+		ReplicatedMoveState.Transform = Kart->GetActorTransform();
 		//TODO: update last move
-	} 
+	}
+
 }
 
 // when server updates move state, propagate to clients
-void UKartMovement::OnRep_ServerMoveState()
+void UKartMovement::OnRep_ReplicatedMoveState()
 {
 	if (!Kart)
 		return;
-	Kart->SetActorTransform(Server_MoveState.Transform);
-	Velocity = Server_MoveState.Velocity;
-}
-
-void UKartMovement::Client_AccelerateForward(float AxisInput)
-{
-	if(Kart)
-	{
-		Acceleration = Kart->GetActorForwardVector() * AxisInput * AccelerationRate;
-		Server_AccelerateForward(AxisInput);
-	} else
-	{
-		UE_LOG(LogTemp, Error, TEXT("Kart is null!!"));
-	}
-}
-
-void UKartMovement::Client_RotateYaw(float AxisInput)
-{
-	MagTorque = AxisInput;
-	Server_RotateYaw(AxisInput);
-}
-
-void UKartMovement::Server_AccelerateForward_Implementation(float AxisInput)
-{
-	if(Kart)
-		Acceleration = Kart->GetActorForwardVector() * AxisInput * AccelerationRate;
-}
-
-bool UKartMovement::Server_AccelerateForward_Validate(float AxisInput)
-{
-	return FMath::Abs(AxisInput) <= 1;
-}
-
-
-void UKartMovement::Server_RotateYaw_Implementation(float AxisInput)
-{
-	MagTorque = AxisInput;
-}
-
-bool UKartMovement::Server_RotateYaw_Validate(float AxisInput)
-{
-	return true;
-}
-
-void UKartMovement::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
-{
-	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-	DOREPLIFETIME(UKartMovement, bReplicatedFlag);
-	DOREPLIFETIME(UKartMovement, Server_MoveState);
 	
-}
+	Kart->SetActorTransform(ReplicatedMoveState.Transform);
+	Velocity = ReplicatedMoveState.Velocity;
 
-void UKartMovement::Server_OnRecieveMove_Implementation()
-{
-	// check valid
-
-	// simulate move
-
-	// send canonical state
-}
-
-bool UKartMovement::Server_OnRecieveMove_Validate()
-{
-	return true;
-}
-
-void UKartMovement::Client_OnRecieveMoveState_Implementation()
-{
 	// remove all moves included in state
 
 	// reset to server state
@@ -186,10 +162,25 @@ void UKartMovement::Client_OnRecieveMoveState_Implementation()
 	// replace/simulate unacked moves
 }
 
-bool UKartMovement::Client_OnRecieveMoveState_Validate()
+void UKartMovement::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(UKartMovement, bReplicatedFlag);
+	DOREPLIFETIME(UKartMovement, ReplicatedMoveState);
+	
+}
+
+/*
+void UKartMovement::Client_OnReceiveMoveState_Implementation()
+{
+
+}
+
+bool UKartMovement::Client_OnReceiveMoveState_Validate()
 {
 	return true;
 }
+*/
 
 // for use in blueprint speedometer
 float UKartMovement::GetSpeed()
