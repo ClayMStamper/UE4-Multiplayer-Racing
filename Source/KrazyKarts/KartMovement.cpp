@@ -30,6 +30,8 @@ void UKartMovement::BeginPlay()
 
 }
 
+
+
 // input method for acceleration
 void UKartMovement::Client_AccelerateForward(float AxisInput)
 {
@@ -42,37 +44,43 @@ void UKartMovement::Client_RotateYaw(float AxisInput)
 	Torque = AxisInput;
 }
 
+
 // Called every frame
 void UKartMovement::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	if (!Kart)
-		return;
-	
-	// Create a "MoveInput" on autonomous client
+	if (!Kart) return;
+
+	const FKartMoveInput MoveInput = CreateMoveInputObject(DeltaTime);
+
 	if (Kart->IsLocallyControlled())
 	{
-		FKartMoveInput MoveInput;
-		MoveInput.DeltaTime = DeltaTime;
-		MoveInput.Throttle = Throttle;
-		MoveInput.Torque = Torque;
-		//TODO: Set timestamp
-
-		// send move to server
+		SimulateMoveLocally(MoveInput);
 		Server_ReceiveMoveInput(MoveInput);
 	}
 	
-	//TODO: Save list of un-acked moves
-
-
-	//Simulate move locally
-	Accelerate(DeltaTime);
-	UpdateTransform();
-	Rotate(DeltaTime);
-
 	DrawDebugScreenMessages();
 	
+}
+
+FKartMoveInput UKartMovement::CreateMoveInputObject(const float& DeltaTime) const
+{
+	FKartMoveInput MoveInput = FKartMoveInput();
+	MoveInput.DeltaTime = DeltaTime;
+	MoveInput.Throttle = Throttle;
+	MoveInput.Torque = Torque;
+	//TODO: Set timestamp
+
+	return MoveInput;
+}
+
+void UKartMovement::SimulateMoveLocally(const FKartMoveInput& MoveInput)
+{
+	//Simulate move locally
+	Accelerate(MoveInput.DeltaTime, MoveInput.Throttle);
+	Rotate(MoveInput.DeltaTime, MoveInput.Torque);
+	UpdateTransform();
 }
 
 void UKartMovement::Server_ReceiveMoveInput_Implementation(const FKartMoveInput& MoveInput)
@@ -80,9 +88,9 @@ void UKartMovement::Server_ReceiveMoveInput_Implementation(const FKartMoveInput&
 	// Match this authoritative entity's move to autonomous proxy's input
 	Throttle = MoveInput.Throttle;
 	Torque = MoveInput.Torque;
-	
-	// send canonical state
-	
+
+	SimulateMoveLocally(MoveInput);
+
 }
 
 bool UKartMovement::Server_ReceiveMoveInput_Validate(const FKartMoveInput& MoveInput)
@@ -90,12 +98,12 @@ bool UKartMovement::Server_ReceiveMoveInput_Validate(const FKartMoveInput& MoveI
 	return true;
 }
 
-void UKartMovement::Accelerate(const float &DeltaTime)
+void UKartMovement::Accelerate(const float &DeltaTime, const float& ThrottleInput)
 {
 	const FVector VelocityNormal = Velocity.GetSafeNormal();
 
 	// set acceleration from input
-	Acceleration = Kart->GetActorForwardVector() * Throttle * AccelerationScalar;
+	Acceleration = Kart->GetActorForwardVector() * ThrottleInput * AccelerationScalar;
 
 	// Apply wind resistance
 	const FVector AirResistance = -VelocityNormal * Velocity.SizeSquared() * DragCoefficient; 
@@ -110,7 +118,7 @@ void UKartMovement::Accelerate(const float &DeltaTime)
 	
 }
 
-void UKartMovement::Rotate(const float &DeltaTime)
+void UKartMovement::Rotate(const float &DeltaTime, const float& TorqueInput)
 {
 	// construct quat
 	const float ForwardSpeed = FVector::DotProduct(Kart->GetActorForwardVector(), Velocity);
@@ -165,7 +173,6 @@ void UKartMovement::OnRep_ReplicatedMoveState()
 void UKartMovement::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-	DOREPLIFETIME(UKartMovement, bReplicatedFlag);
 	DOREPLIFETIME(UKartMovement, ReplicatedMoveState);
 	
 }
@@ -183,7 +190,7 @@ bool UKartMovement::Client_OnReceiveMoveState_Validate()
 */
 
 // for use in blueprint speedometer
-float UKartMovement::GetSpeed()
+float UKartMovement::GetSpeed() const
 {
 	return Velocity.Size();
 }
@@ -205,7 +212,7 @@ FString UKartMovement::RoleEnumToText(ENetRole Role)
 	}
 }
 
-void UKartMovement::DrawDebugScreenMessages() 
+void UKartMovement::DrawDebugScreenMessages() const
 {
 	DrawDebugString
     (

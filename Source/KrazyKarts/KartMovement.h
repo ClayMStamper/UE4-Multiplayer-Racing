@@ -41,21 +41,20 @@ class KRAZYKARTS_API UKartMovement : public UInputComponent
 	GENERATED_UCLASS_BODY()
 
 public:
-	UPROPERTY(Replicated)
-	uint32 bReplicatedFlag:1;
+	// Built-in Methods/Events
 	virtual bool IsSupportedForNetworking() const override { return true; }
-	
 	// Tick: Create a move and send to the server
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
-
-	// Client Input Methods
-	void Client_AccelerateForward(float AxisInput);
-	void Client_RotateYaw(float AxisInput);
+	virtual void BeginPlay() override;
 	
 protected:
 
 	virtual void GetLifetimeReplicatedProps (TArray < FLifetimeProperty > & OutLifetimeProps) const override;
 
+	// Client UObject References
+	UPROPERTY(Transient)
+	class AGoKart* Kart;
+	
 	// Client Constant Properties
 	UPROPERTY(EditAnywhere, Category="Movement")
 	float AccelerationScalar = 50.f;
@@ -67,12 +66,8 @@ protected:
 	float DragCoefficient = 1.f;
 	UPROPERTY(EditAnywhere, meta=(UIMin="0.001", UIMax="0.0015"), Category="Movement")
 	float RollingFrictionCoefficient = 0.001f;
-
-	// Client Object References
-	UPROPERTY(Transient)
-	class AGoKart* Kart;
 	
-	// Client Variables 
+	// Client Variable Props
 	UPROPERTY()
 	float Throttle;
 	UPROPERTY()
@@ -82,12 +77,17 @@ protected:
 	UPROPERTY()
 	FVector Acceleration;
 
-	// Client methods
-	virtual void BeginPlay() override;
-	void Rotate(const float &DeltaTime);
-	void Accelerate(const float &DeltaTime);
-	void UpdateTransform();
+	// Client Input-bound Methods
+	void Client_AccelerateForward(float AxisInput);
+	void Client_RotateYaw(float AxisInput);
 	
+	// Client methods
+	FKartMoveInput CreateMoveInputObject(const float& DeltaTime) const;
+	void SimulateMoveLocally(const FKartMoveInput& MoveInput);
+	void Rotate(const float &DeltaTime, const float& TorqueInput);
+	void Accelerate(const float &DeltaTime, const float& ThrottleInput);
+	void UpdateTransform();
+
 	// Server Replicated Properties
 	UPROPERTY(ReplicatedUsing=OnRep_ReplicatedMoveState, Transient)
 	FKartMoveState ReplicatedMoveState;
@@ -95,17 +95,17 @@ protected:
 	// Client Replication Methods
 	UFUNCTION()
     void OnRep_ReplicatedMoveState();
-	
+
 	// Server methods
 	UFUNCTION(Server, Reliable, WithValidation)
     void Server_ReceiveMoveInput(const FKartMoveInput& MoveInput);
 	
 	UFUNCTION(BlueprintCallable)
-	float GetSpeed();
+	float GetSpeed() const;
 
 private:
 
-	FString RoleEnumToText(ENetRole Role);
-	void DrawDebugScreenMessages();
+	static FString RoleEnumToText(ENetRole Role);
+	void DrawDebugScreenMessages() const;
 	
 };
