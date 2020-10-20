@@ -54,6 +54,8 @@ protected:
 	// Client UObject References
 	UPROPERTY(Transient)
 	class AGoKart* Kart;
+	UPROPERTY()
+	TArray<FKartMoveInput> UnAckedMoves;
 	
 	// Client Constant Properties
 	UPROPERTY(EditAnywhere, Category="Movement")
@@ -83,18 +85,19 @@ protected:
 	
 	// Client methods
 	FKartMoveInput CreateMoveInputObject(const float& DeltaTime) const;
+	void ClearAckedMoves(FKartMoveInput LastMove);
 	void SimulateMoveLocally(const FKartMoveInput& MoveInput);
 	void Rotate(const float &DeltaTime, const float& TorqueInput);
 	void Accelerate(const float &DeltaTime, const float& ThrottleInput);
 	void UpdateTransform();
 
 	// Server Replicated Properties
-	UPROPERTY(ReplicatedUsing=OnRep_ReplicatedMoveState, Transient)
-	FKartMoveState ReplicatedMoveState;
+	UPROPERTY(ReplicatedUsing=OnRep_ReplicatedState, Transient)
+	FKartMoveState ReplicatedState;
 
 	// Client Replication Methods
 	UFUNCTION()
-    void OnRep_ReplicatedMoveState();
+    void OnRep_ReplicatedState();
 
 	// Server methods
 	UFUNCTION(Server, Reliable, WithValidation)

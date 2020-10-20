@@ -18,7 +18,6 @@ UKartMovement::UKartMovement(const FObjectInitializer& ObjectInitializer)
 	PrimaryComponentTick.bCanEverTick = true;
 }
 
-
 // Called when the game starts
 void UKartMovement::BeginPlay()
 {
@@ -29,8 +28,6 @@ void UKartMovement::BeginPlay()
 	check(Kart);
 
 }
-
-
 
 // input method for acceleration
 void UKartMovement::Client_AccelerateForward(float AxisInput)
@@ -44,7 +41,6 @@ void UKartMovement::Client_RotateYaw(float AxisInput)
 	Torque = AxisInput;
 }
 
-
 // Called every frame
 void UKartMovement::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
@@ -52,10 +48,14 @@ void UKartMovement::TickComponent(float DeltaTime, ELevelTick TickType, FActorCo
 
 	if (!Kart) return;
 
-	const FKartMoveInput MoveInput = CreateMoveInputObject(DeltaTime);
-
 	if (Kart->IsLocallyControlled())
 	{
+		const FKartMoveInput MoveInput = CreateMoveInputObject(DeltaTime);
+		if (!Kart->HasAuthority())
+		{
+			UnAckedMoves.Add(MoveInput);
+			// UE_LOG(LogTemp, Warning, TEXT("Unacked move count: %d"), UnAckedMoves.Num());
+		}
 		SimulateMoveLocally(MoveInput);
 		Server_ReceiveMoveInput(MoveInput);
 	}
@@ -70,9 +70,24 @@ FKartMoveInput UKartMovement::CreateMoveInputObject(const float& DeltaTime) cons
 	MoveInput.DeltaTime = DeltaTime;
 	MoveInput.Throttle = Throttle;
 	MoveInput.Torque = Torque;
-	//TODO: Set timestamp
+	MoveInput.TimeStamp = GetWorld()->TimeSeconds;
 
 	return MoveInput;
+}
+
+void UKartMovement::ClearAckedMoves(FKartMoveInput LastMove)
+{
+	TArray<FKartMoveInput> NewMoves;
+
+	for (FKartMoveInput Move : UnAckedMoves)
+	{
+		if (Move.TimeStamp > LastMove.TimeStamp)
+		{
+			NewMoves.Add(Move);
+		}
+	}
+
+	UnAckedMoves = NewMoves;
 }
 
 void UKartMovement::SimulateMoveLocally(const FKartMoveInput& MoveInput)
@@ -81,6 +96,7 @@ void UKartMovement::SimulateMoveLocally(const FKartMoveInput& MoveInput)
 	Accelerate(MoveInput.DeltaTime, MoveInput.Throttle);
 	Rotate(MoveInput.DeltaTime, MoveInput.Torque);
 	UpdateTransform();
+	ReplicatedState.LastMove = MoveInput;	
 }
 
 void UKartMovement::Server_ReceiveMoveInput_Implementation(const FKartMoveInput& MoveInput)
@@ -88,7 +104,7 @@ void UKartMovement::Server_ReceiveMoveInput_Implementation(const FKartMoveInput&
 	// Match this authoritative entity's move to autonomous proxy's input
 	Throttle = MoveInput.Throttle;
 	Torque = MoveInput.Torque;
-
+	
 	SimulateMoveLocally(MoveInput);
 
 }
@@ -115,6 +131,11 @@ void UKartMovement::Accelerate(const float &DeltaTime, const float& ThrottleInpu
 
 	// apply acceleration to velocity
 	Velocity += Acceleration * DeltaTime;
+
+	if (Kart->HasAuthority())
+	{
+		ReplicatedState.Velocity = Velocity;
+	}
 	
 }
 
@@ -148,32 +169,35 @@ void UKartMovement::UpdateTransform()
 	// correct position to server replicated pos
 	if (Kart->HasAuthority())
 	{
-		ReplicatedMoveState.Transform = Kart->GetActorTransform();
-		//TODO: update last move
+		ReplicatedState.Transform = Kart->GetActorTransform();
 	}
 
 }
 
 // when server updates move state, propagate to clients
-void UKartMovement::OnRep_ReplicatedMoveState()
+void UKartMovement::OnRep_ReplicatedState()
 {
 	if (!Kart)
 		return;
 	
-	Kart->SetActorTransform(ReplicatedMoveState.Transform);
-	Velocity = ReplicatedMoveState.Velocity;
+	Kart->SetActorTransform(ReplicatedState.Transform);
+	Velocity = ReplicatedState.Velocity;
 
 	// remove all moves included in state
+	ClearAckedMoves(ReplicatedState.LastMove);
 
-	// reset to server state
-
-	// replace/simulate unacked moves
+	// simulate unacked moves
+	for (const FKartMoveInput& Move : UnAckedMoves)
+	{
+		SimulateMoveLocally(Move);
+	}
+	
 }
 
 void UKartMovement::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-	DOREPLIFETIME(UKartMovement, ReplicatedMoveState);
+	DOREPLIFETIME(UKartMovement, ReplicatedState);
 	
 }
 
