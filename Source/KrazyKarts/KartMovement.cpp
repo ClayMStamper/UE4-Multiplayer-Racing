@@ -46,19 +46,22 @@ void UKartMovement::TickComponent(float DeltaTime, ELevelTick TickType, FActorCo
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	if (!Kart) return;
+	// return if not receiving input from player
+	// can optimize by disabling tick on server to prevent busy-waiting
+	if (!Kart || !Kart->IsLocallyControlled()) return;
 
-	if (Kart->IsLocallyControlled())
+	// package move input
+	const FKartMoveInput MoveInput = CreateMoveInputObject(DeltaTime);
+	
+	// run on client (only relevant on listen-server)
+	if (!Kart->HasAuthority()) 
 	{
-		const FKartMoveInput MoveInput = CreateMoveInputObject(DeltaTime);
-		if (!Kart->HasAuthority())
-		{
-			UnAckedMoves.Add(MoveInput);
-			// UE_LOG(LogTemp, Warning, TEXT("Unacked move count: %d"), UnAckedMoves.Num());
-		}
+		UnAckedMoves.Add(MoveInput);
 		SimulateMoveLocally(MoveInput);
-		Server_ReceiveMoveInput(MoveInput);
 	}
+	
+	// send input to server and simulate this kart instance's move 
+	Server_ReceiveMoveInput(MoveInput); 
 	
 	DrawDebugScreenMessages();
 	
@@ -101,11 +104,11 @@ void UKartMovement::SimulateMoveLocally(const FKartMoveInput& MoveInput)
 
 void UKartMovement::Server_ReceiveMoveInput_Implementation(const FKartMoveInput& MoveInput)
 {
-	// Match this authoritative entity's move to autonomous proxy's input
-	Throttle = MoveInput.Throttle;
-	Torque = MoveInput.Torque;
-	
 	SimulateMoveLocally(MoveInput);
+
+	// Match this authoritative entity's move to autonomous proxy's input
+	ReplicatedState.Velocity = Velocity;
+
 
 }
 
@@ -132,18 +135,13 @@ void UKartMovement::Accelerate(const float &DeltaTime, const float& ThrottleInpu
 	// apply acceleration to velocity
 	Velocity += Acceleration * DeltaTime;
 
-	if (Kart->HasAuthority())
-	{
-		ReplicatedState.Velocity = Velocity;
-	}
-	
 }
 
 void UKartMovement::Rotate(const float &DeltaTime, const float& TorqueInput)
 {
 	// construct quat
 	const float ForwardSpeed = FVector::DotProduct(Kart->GetActorForwardVector(), Velocity);
-	const float AngleOfRotation = ForwardSpeed / TurnRadius * Torque;
+	const float AngleOfRotation = ForwardSpeed / TurnRadius * TorqueInput;
 	const FQuat DeltaRot = FQuat(Kart->GetActorUpVector(), AngleOfRotation * DeltaTime);
 
 	// rotate kart actor
@@ -186,7 +184,7 @@ void UKartMovement::OnRep_ReplicatedState()
 	// remove all moves included in state
 	ClearAckedMoves(ReplicatedState.LastMove);
 
-	// simulate unacked moves
+	// simulate un-acked moves to compensate for ping over 100ms
 	for (const FKartMoveInput& Move : UnAckedMoves)
 	{
 		SimulateMoveLocally(Move);
